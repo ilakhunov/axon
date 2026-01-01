@@ -98,10 +98,11 @@ Built-in tools, no API keys needed:
 - **Web Search** (`axon_tools.web_search`): DuckDuckGo integration
 - **File System** (`axon_tools.read_file`, `write_file`): Read/write files
 
-### 🧪 Type-Safe
-- Pydantic validation for inputs and outputs
+### 🧪 Type-Safe & Production-Ready (v0.3)
+- **Structured Outputs**: Return typed Pydantic models instead of strings
+- **History Management**: Auto-truncates conversation to stay within token limits
+- **Context/State**: Share data between tools without manual passing
 - Full type inference support
-- Structured output parsing
 
 ---
 
@@ -122,6 +123,47 @@ print(agent.ask("What's 12 times 8?"))
 # Agent calls multiply(12, 8) → "The result is 96"
 ```
 
+### Structured Output (v0.3 🆕)
+```python
+from axon import Agent
+from pydantic import BaseModel
+
+class Email(BaseModel):
+    address: str
+    confidence: float
+
+agent = Agent("EmailBot")
+result = agent.ask(
+    "Extract email from: contact me at john@example.com",
+    response_model=Email
+)
+print(result.address)  # "john@example.com"
+print(result.confidence)  # 0.95
+```
+
+### Context/State Management (v0.3 🆕)
+```python
+from axon import Agent, Context
+
+agent = Agent("DataBot")
+
+@agent.tool
+def fetch_data(source: str, ctx: Context) -> str:
+    """Fetch data and store in context."""
+    data = get_data(source)
+    ctx.set("data", data)  # Share with other tools
+    return "Data fetched"
+
+@agent.tool
+def analyze(ctx: Context) -> str:
+    """Analyze data from context."""
+    data = ctx.get("data")  # Access shared state
+    return f"Analysis: {analyze(data)}"
+
+# Agent automatically passes data between tools!
+agent.ask("Fetch data from database and analyze it")
+```
+
 ### Web Research Agent
 ```python
 from axon import Agent
@@ -136,6 +178,33 @@ agent.ask("Search for Python AI frameworks and save a summary to report.txt")
 ```
 
 **More examples:** See [`examples/`](examples/) directory
+
+---
+
+## 🎯 Advanced Features
+
+### History Management (v0.3)
+Control conversation token usage to prevent context overflow:
+
+```python
+agent = Agent(
+    "LongConversationBot",
+    max_history_tokens=4000  # Auto-truncates when exceeded
+)
+
+# After many questions, old messages are automatically removed
+# System message is always preserved
+```
+
+### Custom Configuration
+```python
+agent = Agent(
+    name="CustomBot",
+    system="You are a helpful assistant specialized in...",
+    model="gpt-4o",  # or "gpt-4o-mini"
+    max_history_tokens=2000
+)
+```
 
 ---
 
@@ -198,10 +267,10 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 - [x] **v0.1**: Core Agent + Tool decorator
 - [x] **v0.2**: Plugin ecosystem (Web Search, File System)
-- [ ] **v0.3**: Axon Studio (Visual debugging UI)
-- [ ] **v0.4**: Multi-agent support (Swarms)
-- [ ] **v0.5**: Streaming & async tools
-- [ ] **v1.0**: Production-ready with full docs
+- [x] **v0.3**: Production essentials (Structured Outputs, History Management, Context/State) ✨
+- [ ] **v0.4**: Streaming & async support
+- [ ] **v0.5**: Multi-agent collaboration
+- [ ] **v1.0**: Axon Studio (Visual debugging UI) + Full production readiness
 
 ---
 
@@ -215,8 +284,9 @@ The main orchestrator. Manages LLM calls, tool execution, and conversation histo
 ```python
 agent = Agent(
     name="MyBot",
-    system="You are...",  # System prompt
-    model="gpt-4o"        # OpenAI model
+    system="You are...",         # System prompt
+    model="gpt-4o",               # OpenAI model
+    max_history_tokens=4000       # Token limit (v0.3)
 )
 ```
 
@@ -234,6 +304,65 @@ def my_function(param: str) -> str:
 - Must have type hints
 - Must have a docstring
 - Return value should be string or serializable
+
+#### Structured Outputs (v0.3)
+Return typed Pydantic models instead of strings:
+
+```python
+from pydantic import BaseModel
+
+class Person(BaseModel):
+    name: str
+    age: int
+    email: str
+
+result = agent.ask(
+    "Extract person info from: John Doe, 30, john@example.com",
+    response_model=Person
+)
+# result is a Person instance with validated fields
+print(result.name)  # "John Doe"
+```
+
+#### Context/State (v0.3)
+Share data between tools:
+
+```python
+from axon import Context
+
+@agent.tool
+def step_one(data: str, ctx: Context) -> str:
+    """Process data and store result."""
+    result = process(data)
+    ctx.set("result", result)  # Store for next tool
+    return "Done"
+
+@agent.tool
+def step_two(ctx: Context) -> str:
+    """Use data from previous tool."""
+    result = ctx.get("result")  # Retrieve
+    return f"Final: {result}"
+```
+
+**Context API:**
+- `ctx.set(key, value)` - Store value
+- `ctx.get(key, default=None)` - Retrieve value
+- `ctx.has(key)` - Check if key exists
+- `ctx.delete(key)` - Remove key
+- `ctx.clear()` - Clear all data
+- `ctx.keys()` - Get all keys
+
+#### History Management (v0.3)
+Automatic conversation truncation:
+
+```python
+agent = Agent("Bot", max_history_tokens=2000)
+
+# When token count exceeds limit:
+# - System message is preserved
+# - Oldest messages are removed
+# - Automatic truncation on each ask()
+```
 
 ---
 
