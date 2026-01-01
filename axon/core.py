@@ -259,3 +259,132 @@ class Agent:
                 content = msg.content or ""
                 logger.info(f"Agent Answer: [bold blue]{content}[/]")
                 return content
+    
+    def ask_stream(self, prompt: str):
+        """
+        Stream agent responses in real-time.
+        Yields text chunks as they're generated.
+        
+        Args:
+            prompt: The user's question or instruction
+            
+        Yields:
+            str: Text chunks as they arrive from the LLM
+        """
+        logger.info(f"User asking (streaming): [bold green]{prompt}[/]")
+        self.history.append({"role": "user", "content": prompt})
+        
+        # Truncate history to stay within limits
+        self._truncate_history()
+        
+        # Prepare tools
+        oai_tools: List[ChatCompletionToolParam] = [t.schema_ for t in self.tools.values()] # type: ignore
+        if not oai_tools:
+            oai_tools = None # type: ignore
+
+        if not self.client:
+             try:
+                 self.client = OpenAI()
+             except Exception:
+                 yield "❌ Error: Missing OPENAI_API_KEY. Please set it in your environment."
+                 return
+
+        while True:
+            # Create stream
+            stream = self.client.chat.completions.create(
+                model=self.config.model,
+                messages=self.history,
+                tools=oai_tools,
+                stream=True  # Enable streaming!
+            )
+            
+            # Collect chunks
+            full_content = ""
+            tool_calls_data = []
+            
+            for chunk in stream:
+                delta = chunk.choices[0].delta
+                
+                # Stream text content
+                if delta.content:
+                    full_content += delta.content
+                    yield delta.content
+                
+                # Collect tool calls (can't stream these)
+                if delta.tool_calls:
+                    # Buffer tool calls
+                    for tc in delta.tool_calls:
+                        # Ensure we have enough space in list
+                        while len(tool_calls_data) <= (tc.index or 0):
+                            tool_calls_data.append({"id": None, "name": "", "arguments": ""})
+                        
+                        if tc.id:
+                            tool_calls_data[tc.index or 0]["id"] = tc.id
+                        if tc.function and tc.function.name:
+                            tool_calls_data[tc.index or 0]["name"] = tc.function.name
+                        if tc.function and tc.function.arguments:
+                            tool_calls_data[tc.index or 0]["arguments"] += tc.function.arguments
+            
+            # Build message for history
+            msg_dict: Dict[str, Any] = {"role": "assistant"}
+            if full_content:
+                msg_dict["content"] = full_content
+            if tool_calls_data and tool_calls_data[0]["id"]:
+                msg_dict["tool_calls"] = [
+                    {
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": tc["arguments"]
+                        }
+                    }
+                    for tc in tool_calls_data if tc["id"]
+                ]
+            
+            self.history.append(msg_dict) # type: ignore
+            
+            # Handle tool calls
+            if tool_calls_data and tool_calls_data[0]["id"]:
+                logger.info(f"Agent decided to call {len(tool_calls_data)} tools")
+                
+                for tc in tool_calls_data:
+                    if not tc["id"]:
+                        continue
+                    
+                    fn_name = tc["name"]
+                    fn_args = json.loads(tc["arguments"])
+                    
+                    if fn_name in self.tools:
+                        logger.info(f"Calling [bold cyan]{fn_name}[/] with {fn_args}")
+                        
+                        # Check if tool needs context injection
+                        tool_func = self.tools[fn_name].func
+                        sig = inspect.signature(tool_func)
+                        
+                        # Inject context if function has 'ctx' parameter
+                        if 'ctx' in sig.parameters:
+                            fn_args['ctx'] = self.context
+                        
+                        tool_result = tool_func(**fn_args)
+                        logger.info(f"Result: {tool_result}")
+                        
+                        self.history.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "content": str(tool_result)
+                        })
+                    else:
+                        logger.error(f"Tool {fn_name} not found!")
+                        self.history.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "content": f"Error: Tool {fn_name} not found"
+                        })
+                
+                # Continue loop to get response after tool calls
+                continue
+            else:
+                # No tool calls, we're done
+                logger.info(f"Streaming complete: {len(full_content)} chars")
+                break
