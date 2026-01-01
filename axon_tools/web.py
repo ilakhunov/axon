@@ -1,5 +1,6 @@
 from typing import List, Dict
 from duckduckgo_search import DDGS
+from axon.retry import retry
 
 @retry(max_attempts=3, backoff=2.0)
 def web_search(query: str, max_results: int = 5) -> str:
