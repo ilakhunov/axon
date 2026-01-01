@@ -1,5 +1,5 @@
 from typing import Any, Callable, Optional, Union, Dict, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class Tool(BaseModel):
     name: str
@@ -7,8 +7,7 @@ class Tool(BaseModel):
     func: Callable
     schema_: Dict[str, Any] = Field(alias="schema")
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 class AgentConfig(BaseModel):
     name: str

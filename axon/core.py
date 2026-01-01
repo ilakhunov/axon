@@ -38,6 +38,14 @@ class Agent:
             self.memory = None
         
         # Initialize tokenizer for the model
+    
+    @property
+    def name(self) -> str:
+        return self.config.name
+        
+    @property
+    def model(self) -> str:
+        return self.config.model
         try:
             self.tokenizer = tiktoken.encoding_for_model(model)
         except KeyError:
