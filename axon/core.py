@@ -5,6 +5,7 @@ from pydantic import TypeAdapter
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
 from dotenv import load_dotenv
+import tiktoken
 
 from .types import AgentConfig, Tool
 from .utils import get_logger
@@ -14,9 +15,24 @@ load_dotenv() # Load environment variables from .env file
 logger = get_logger()
 
 class Agent:
-    def __init__(self, name: str, system: str = "You are a helpful assistant.", model: str = "gpt-4o"):
+    def __init__(
+        self, 
+        name: str, 
+        system: str = "You are a helpful assistant.", 
+        model: str = "gpt-4o",
+        max_history_tokens: int = 4000
+    ):
         self.config = AgentConfig(name=name, system_prompt=system, model=model)
         self.tools: Dict[str, Tool] = {}
+        self.max_history_tokens = max_history_tokens
+        
+        # Initialize tokenizer for the model
+        try:
+            self.tokenizer = tiktoken.encoding_for_model(model)
+        except KeyError:
+            # Fallback to cl100k_base for unknown models
+            self.tokenizer = tiktoken.get_encoding("cl100k_base")
+        
         # We assume OPENAI_API_KEY is set in environment, or user passes client. 
         # For simplicity in MVP, we instantiate default client.
         self.history: List[ChatCompletionMessageParam] = [
@@ -28,6 +44,42 @@ class Agent:
             self.client = OpenAI()
         except Exception:
             self.client = None # type: ignore
+    
+    def _count_tokens(self, messages: List[ChatCompletionMessageParam]) -> int:
+        """Count tokens in message history."""
+        count = 0
+        for msg in messages:
+            # Count tokens in content
+            if isinstance(msg.get("content"), str):
+                count += len(self.tokenizer.encode(msg["content"]))
+            # Add overhead for message formatting (role, etc)
+            count += 4  # Approximate overhead per message
+        return count
+    
+    def _truncate_history(self):
+        """Truncate old messages to stay within token limit."""
+        if len(self.history) <= 1:
+            return  # Keep at least system message
+        
+        current_tokens = self._count_tokens(self.history)
+        
+        if current_tokens <= self.max_history_tokens:
+            return
+        
+        logger.info(f"History has {current_tokens} tokens, truncating to {self.max_history_tokens}...")
+        
+        # Keep system message (first) and remove oldest user/assistant messages
+        system_msg = self.history[0]
+        other_msgs = self.history[1:]
+        
+        # Remove from the beginning until we're under the limit
+        while other_msgs and self._count_tokens([system_msg] + other_msgs) > self.max_history_tokens:
+            removed = other_msgs.pop(0)
+            logger.info(f"Removed message: {removed.get('role', 'unknown')[:20]}...")
+        
+        self.history = [system_msg] + other_msgs
+        new_tokens = self._count_tokens(self.history)
+        logger.info(f"✅ Truncated to {new_tokens} tokens ({len(self.history)} messages)")
 
     def tool(self, func: Callable) -> Callable:
         """
@@ -101,6 +153,9 @@ class Agent:
         """
         logger.info(f"User asking: [bold green]{prompt}[/]")
         self.history.append({"role": "user", "content": prompt})
+        
+        # Truncate history to stay within limits
+        self._truncate_history()
 
         # Prepare tools
         oai_tools: List[ChatCompletionToolParam] = [t.schema_ for t in self.tools.values()] # type: ignore

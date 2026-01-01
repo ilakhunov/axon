@@ -3,3 +3,4 @@ pydantic
 rich
 python-dotenv
 duckduckgo-search
+tiktoken
