@@ -100,11 +100,13 @@ Built-in batteries for real-world apps:
 - **HTTP/API** (`http_get`, `http_post`): REST API integration
 - **Database** (`query_db`, `create_table`): SQLite queries & analytics
 
-### 🧪 Type-Safe & Production-Ready (v0.3)
-- **Structured Outputs**: Return typed Pydantic models instead of strings
-- **History Management**: Auto-truncates conversation to stay within token limits
-- **Context/State**: Share data between tools without manual passing
+### 🧪 Type-Safe & Production-Ready
 - **Streaming Responses** (v0.4): Real-time text generation
+- **Structured Outputs** (v0.3): Return typed Pydantic models instead of strings
+- **History Management** (v0.3): Auto-truncates conversation to stay within token limits
+- **Context/State** (v0.3): Share data between tools without manual passing
+- **Persistent Memory** (v0.5 🆕): Agents remember conversations across sessions
+- **Error Retry** (v0.5 🆕): Automatic retry with exponential backoff
 - Full type inference support
 
 ---
@@ -178,6 +180,39 @@ agent.tool(write_file)
 
 agent.ask("Search for Python AI frameworks and save a summary to report.txt")
 # ✅ Searches web, writes formatted report
+```
+
+**More examples:** See [`examples/`](examples/) directory
+
+### Persistent Memory (v0.5 🆕)
+```python
+from axon import Agent
+
+# Enable memory for agent
+agent = Agent("MemoryBot", memory="./memory.db")
+
+# Session 1
+agent.ask("My name is Alice and I love Python")
+
+# Session 2 (new instance, same memory!)
+agent2 = Agent("MemoryBot", memory="./memory.db")
+agent2.ask("What's my name?")
+# → "Your name is Alice" ✨ Remembers!
+```
+
+### Error Retry (v0.5 🆕)
+```python
+from axon import Agent, retry
+
+agent = Agent("ReliableBot")
+
+@agent.tool
+@retry(max_attempts=3, backoff=2.0)
+def flaky_api(url: str) -> str:
+    """Call unreliable API with auto-retry."""
+    return requests.get(url).json()
+
+# Automatically retries on failure with exponential backoff!
 ```
 
 **More examples:** See [`examples/`](examples/) directory
