@@ -3,7 +3,9 @@ HTTP/API tools for making REST API requests.
 """
 import requests
 from typing import Optional, Dict, Any
+from axon.retry import retry
 
+@retry(max_attempts=3, backoff=1.5)
 def http_get(
     url: str, 
     headers: Optional[Dict[str, str]] = None,
@@ -40,6 +42,7 @@ def http_get(
     except requests.exceptions.RequestException as e:
         return f"Error making GET request to {url}: {str(e)}"
 
+@retry(max_attempts=3, backoff=1.5)
 def http_post(
     url: str,
     data: Optional[Dict[str, Any]] = None,

@@ -4,7 +4,9 @@ Database tools for SQLite queries.
 import sqlite3
 from typing import List, Dict, Any, Optional
 import os
+from axon.retry import retry
 
+@retry(max_attempts=3, backoff=1.0, exceptions=(sqlite3.OperationalError, sqlite3.DatabaseError))
 def query_db(database_path: str, query: str, params: Optional[tuple] = None) -> str:
     """
     Execute a SQL query on a SQLite database.

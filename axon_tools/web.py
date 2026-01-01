@@ -1,6 +1,7 @@
 from typing import List, Dict
 from duckduckgo_search import DDGS
 
+@retry(max_attempts=3, backoff=2.0)
 def web_search(query: str, max_results: int = 5) -> str:
     """
     Search the web using DuckDuckGo and return results.
