@@ -48,7 +48,7 @@ No chains. No graphs. No configurations. **Just Python.**
 ### Installation
 
 ```bash
-pip install openai pydantic rich python-dotenv duckduckgo-search tiktoken requests
+pip install axon-framework
 ```
 
 ### Create Your First Agent (60 seconds)
