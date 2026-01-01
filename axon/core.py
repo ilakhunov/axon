@@ -9,6 +9,7 @@ import tiktoken
 
 from .types import AgentConfig, Tool
 from .utils import get_logger
+from .context import Context
 
 load_dotenv() # Load environment variables from .env file
 
@@ -25,6 +26,7 @@ class Agent:
         self.config = AgentConfig(name=name, system_prompt=system, model=model)
         self.tools: Dict[str, Tool] = {}
         self.max_history_tokens = max_history_tokens
+        self.context = Context()  # Shared context for tools
         
         # Initialize tokenizer for the model
         try:
@@ -95,7 +97,12 @@ class Agent:
         required = []
         
         for param_name, param in sig.parameters.items():
-            if param_name == 'self': continue
+            if param_name == 'self':
+                continue
+            
+            # Skip 'ctx' parameter - it will be injected automatically
+            if param_name == 'ctx' and param.annotation == Context:
+                continue
             
             # Map python types to JSON types is complex, 
             # for MVP we will use a simplified approach or pydantic if possible.
@@ -223,7 +230,16 @@ class Agent:
                     
                     if fn_name in self.tools:
                         logger.info(f"Calling [bold cyan]{fn_name}[/] with {fn_args}")
-                        tool_result = self.tools[fn_name].func(**fn_args)
+                        
+                        # Check if tool needs context injection
+                        tool_func = self.tools[fn_name].func
+                        sig = inspect.signature(tool_func)
+                        
+                        # Inject context if function has 'ctx' parameter
+                        if 'ctx' in sig.parameters:
+                            fn_args['ctx'] = self.context
+                        
+                        tool_result = tool_func(**fn_args)
                         logger.info(f"Result: {tool_result}")
                         
                         self.history.append({
