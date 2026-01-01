@@ -265,3 +265,10 @@ Inspired by:
 [Report Bug](#) • [Request Feature](#) • [Join Discord](#)
 
 </div>
+
+
+---
+
+## ⭐ Stargazers over time
+
+[![Stargazers over time](https://starchart.cc/ilakhunov/axon.svg?variant=adaptive)](https://starchart.cc/ilakhunov/axon)
