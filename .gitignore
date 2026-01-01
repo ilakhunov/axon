@@ -52,3 +52,4 @@ greeting.txt
 *.txt
 !requirements.txt
 !LICENSE
+MARKETING_PRIVATE.md
