@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "axon-ai"
+version = "0.5.0"
+description = "The 'FastAPI' for AI Agents - Build typed, production-ready AI agents in minutes"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Ilya Lakhunov", email = "ilakhunov@gmail.com"}
+]
+keywords = ["ai", "agents", "llm", "openai", "framework", "chatgpt", "gpt-4"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "openai>=1.0.0",
+    "pydantic>=2.0.0",
+    "rich>=13.0.0",
+    "python-dotenv>=1.0.0",
+    "duckduckgo-search>=3.0.0",
+    "tiktoken>=0.5.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "mypy>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/ilakhunov/axon"
+Documentation = "https://github.com/ilakhunov/axon#readme"
+Repository = "https://github.com/ilakhunov/axon"
+Issues = "https://github.com/ilakhunov/axon/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["axon*", "axon_tools*"]
+exclude = ["tests*", "examples*", "docs*"]
