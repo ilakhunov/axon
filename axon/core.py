@@ -1,6 +1,6 @@
 import inspect
 import json
-from typing import Any, Dict, List, Optional, Callable, Type, Coroutine
+from typing import Any, Dict, List, Optional, Callable, Type, Coroutine, Union
 from pydantic import BaseModel, TypeAdapter
 from openai import OpenAI, AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
@@ -13,6 +13,7 @@ from .utils import get_logger
 from .context import Context
 from .tracing import Tracer, Event
 from .knowledge import KnowledgeBase
+from .memory import MemoryBackend, SqliteMemory
 
 load_dotenv() # Load environment variables from .env file
 
@@ -29,7 +30,7 @@ class Agent:
         system: str = "You are a helpful assistant.", 
         model: str = "gpt-4o",
         max_history_tokens: int = 4000,
-        memory: str = None,
+        memory: Optional[Union[str, MemoryBackend]] = None,
         client: Optional[OpenAI] = None,
         tracer: Optional[Tracer] = None,
         knowledge: Optional[str] = None  # RAG: Path to file or text
@@ -52,9 +53,12 @@ class Agent:
         
         # 1. Initialize Memory
         if memory:
-            from .memory import Memory
-            self.memory = Memory(memory)
-            logger.info(f"Memory enabled: {memory}")
+            if isinstance(memory, str):
+                self.memory = SqliteMemory(memory)
+                logger.info(f"Memory enabled (SQLite): {memory}")
+            else:
+                self.memory = memory
+                logger.info(f"Memory enabled (Custom Backend): {type(memory).__name__}")
         else:
             self.memory = None
         
@@ -227,7 +231,7 @@ class Agent:
             user_msg_count = sum(1 for msg in self.history if msg.get("role") == "user")
             if user_msg_count == 0:
                 # Get recent conversation history to restore context
-                recent_messages = self.memory.get_recent_messages(limit=10)
+                recent_messages = self.memory.get_recent(k=10)
                 if recent_messages:
                     logger.info(f"Loaded {len(recent_messages)} messages from memory")
                     # Add recent messages to history (excluding system)
@@ -242,7 +246,7 @@ class Agent:
         
         # Save user message to memory
         if self.memory:
-            self.memory.save_message("user", prompt)
+            self.memory.add("user", prompt)
         
         # Truncate history to stay within limits
         self._truncate_history()
@@ -392,7 +396,7 @@ class Agent:
 
                 # Save assistant response to memory
                 if self.memory:
-                    self.memory.save_message("assistant", content)
+                    self.memory.add("assistant", content)
                 
                 return content
     
@@ -543,7 +547,7 @@ class AsyncAgent(Agent):
         system: str = "You are a helpful assistant.", 
         model: str = "gpt-4o",
         max_history_tokens: int = 4000,
-        memory: str = None,
+        memory: Optional[Union[str, MemoryBackend]] = None,
         client: Optional[AsyncOpenAI] = None
     ):
         super().__init__(name, system, model, max_history_tokens, memory)
@@ -567,7 +571,7 @@ class AsyncAgent(Agent):
         if self.memory:
             user_msg_count = sum(1 for msg in self.history if msg.get("role") == "user")
             if user_msg_count == 0:
-                recent_messages = self.memory.get_recent_messages(limit=10)
+                recent_messages = self.memory.get_recent(k=10)
                 if recent_messages:
                     for msg in recent_messages:
                         if msg['role'] != 'system':
@@ -576,7 +580,7 @@ class AsyncAgent(Agent):
         self.history.append({"role": "user", "content": prompt})
         
         if self.memory:
-            self.memory.save_message("user", prompt)
+            self.memory.add("user", prompt)
             
         self._truncate_history()
         
@@ -693,5 +697,5 @@ class AsyncAgent(Agent):
                 content = msg.content or ""
                 logger.info(f"Agent Answer: [bold blue]{content}[/]")
                 if self.memory:
-                    self.memory.save_message("assistant", content)
+                    self.memory.add("assistant", content)
                 return content

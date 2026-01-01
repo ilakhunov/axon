@@ -42,6 +42,12 @@ dependencies = [
 axon = "axon.cli:cli"
 
 [project.optional-dependencies]
+postgres = [
+    "psycopg[binary]>=3.1.0"
+]
+redis = [
+    "redis>=5.0.0"
+]
 dev = [
     "pytest>=7.0.0",
     "black>=23.0.0",
