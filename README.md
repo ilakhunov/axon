@@ -83,31 +83,15 @@ That's it! 🎉
 
 ## 🛠 Features
 
-### 🚀 Zero Boilerplate
-- **Auto-schema generation**: Type hints → OpenAI function schemas
-- **Decorator-based tools**: Just use `@agent.tool`
-- **`.env` support**: No manual environment handling
+### ⚡ Features (v0.8)
 
-### 🎨 Beautiful DX
-- **Rich console logging**: See agent reasoning in real-time
-- **Helpful errors**: No cryptic stack traces
-- **5-minute promise**: From zero to working agent in 5 minutes
-
-### 🔌 Production Tools (v0.4 🆕)
-Built-in batteries for real-world apps:
-- **Web Search** (`web_search`): DuckDuckGo integration, no API key
-- **File System** (`read_file`, `write_file`): Safe file operations
-- **HTTP/API** (`http_get`, `http_post`): REST API integration
-- **Database** (`query_db`, `create_table`): SQLite queries & analytics
-
-### 🧪 Type-Safe & Production-Ready
-- **Streaming Responses** (v0.4): Real-time text generation
-- **Structured Outputs** (v0.3): Return typed Pydantic models instead of strings
-- **History Management** (v0.3): Auto-truncates conversation to stay within token limits
-- **Context/State** (v0.3): Share data between tools without manual passing
-- **Persistent Memory** (v0.5 🆕): Agents remember conversations across sessions
-- **Error Retry** (v0.5 🆕): Automatic retry with exponential backoff
-- Full type inference support
+- **🧠 Cognitive Architecture**: Chains of Thought, Tool Use, and Memory.
+- **⚡ Async & Serving**: Native `async` support and 1-line FastAPI deployment (`agent.serve()`).
+- **🔍 Observability**: Trace agent execution and thoughts with built-in `trace_viewer.html`.
+- **⚖️ Evaluations**: "LLM-as-a-Judge" framework for automated testing (`axon.evaluation`).
+- **📚 Context (RAG)**: Built-in knowledge retrieval from files (`knowledge="..."`).
+- **🐝 Multi-Agent Swarms**: Intelligent `Handoffs` and shared `Context`.
+- **🛠️ Developer CLI**: Scaffold projects in seconds with `axon new`.
 
 ---
 
@@ -314,6 +298,30 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ---
 
 ## 📖 Documentation
+
+### 🧠 Intelligence & Memory (v0.5 🆕)
+- **Persistent Memory**: Chat history saved to SQLite (`memory="path/to.db"`)
+- **Auto-Retries**: `@retry` decorator for flaky tools
+- **Context Awareness**: Agents remember user details across sessions
+
+### 🐝 Multi-Agent Swarms (v0.6 Alpha 🆕)
+- **Swarm Orchestration**: Manage teams of specialized agents
+- **Intelligent Handoffs**: Agents automatically transfer tasks to specialists
+- **Shared Context**: Memory shared across the entire swarm
+
+```python
+from axon import Agent, Swarm, Handoff
+
+triage = Agent("Triage")
+billing = Agent("Billing")
+
+@triage.tool
+def transfer_to_billing(reason: str) -> Handoff:
+    return Handoff(target_agent="Billing", context=reason)
+
+swarm = Swarm([triage, billing])
+swarm.run(triage, "I need a refund")
+```
 
 ### Core Concepts
 

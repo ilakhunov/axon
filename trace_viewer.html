@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Axon Trace Viewer 🕵️‍♂️</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #f4f6f8;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        h1 {
+            margin-top: 0;
+            color: #1a1a1a;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .upload-box {
+            border: 2px dashed #ccc;
+            padding: 30px;
+            text-align: center;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .upload-box:hover {
+            border-color: #007bff;
+            background: #f0f7ff;
+        }
+
+        .timeline {
+            position: relative;
+            padding-left: 20px;
+            border-left: 2px solid #e0e0e0;
+            margin-left: 10px;
+        }
+
+        .event {
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .event::before {
+            content: '';
+            position: absolute;
+            left: -26px;
+            top: 0;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ccc;
+            border: 2px solid white;
+            box-shadow: 0 0 0 2px #ccc;
+        }
+
+        /* Event Types */
+        .type-completion_start::before {
+            background: #28a745;
+            box-shadow: 0 0 0 2px #28a745;
+        }
+
+        .type-tool_call::before {
+            background: #007bff;
+            box-shadow: 0 0 0 2px #007bff;
+        }
+
+        .type-tool_result::before {
+            background: #17a2b8;
+            box-shadow: 0 0 0 2px #17a2b8;
+        }
+
+        .type-agent_response::before {
+            background: #6610f2;
+            box-shadow: 0 0 0 2px #6610f2;
+        }
+
+        .type-error::before {
+            background: #dc3545;
+            box-shadow: 0 0 0 2px #dc3545;
+        }
+
+        .card {
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 10px 15px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9em;
+        }
+
+        .card-body {
+            padding: 15px;
+            font-size: 0.95em;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            font-family: monospace;
+            overflow-x: auto;
+            background: #fafafa;
+        }
+
+        .agent-badge {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            color: #495057;
+        }
+
+        .timestamp {
+            color: #868e96;
+            font-size: 0.8em;
+            font-weight: normal;
+        }
+
+        /* Specific Styles */
+        .start-prompt {
+            color: #155724;
+            background-color: #d4edda;
+        }
+
+        .response-content {
+            color: #004085;
+            background-color: #cce5ff;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Axon Trace Viewer 🕵️‍♂️</h1>
+        <p>Drop your <code>trace.jsonl</code> file here to visualize the execution.</p>
+
+        <div class="upload-box" id="dropZone" onclick="document.getElementById('fileInput').click()">
+            <p>📁 Drag & Drop trace.jsonl or Click to Upload</p>
+            <input type="file" id="fileInput" accept=".jsonl,.json" style="display: none">
+        </div>
+
+        <div id="timeline" class="timeline"></div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const timeline = document.getElementById('timeline');
+
+        // Auto-load if served via HTTP
+        window.onload = function () {
+            // Only try to fetch if we are on a server (http/https), not file://
+            if (window.location.protocol.startsWith('http')) {
+                fetch('trace.jsonl')
+                    .then(response => {
+                        if (response.ok) return response.text();
+                        throw new Error('Trace file not found');
+                    })
+                    .then(text => {
+                        console.log("Auto-loaded trace.jsonl");
+                        renderTrace(text);
+                        // Hide upload box if successful
+                        dropZone.style.display = 'none';
+                    })
+                    .catch(err => {
+                        console.log("Auto-load failed, waiting for user input:", err);
+                    });
+            }
+        };
+
+        function handleFile(file) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                renderTrace(e.target.result);
+                dropZone.style.display = 'none';
+            };
+            reader.readAsText(file);
+        }
+
+        function renderTrace(content) {
+            timeline.innerHTML = '';
+            const lines = content.trim().split('\n');
+            const events = lines.map(line => {
+                try { return JSON.parse(line); } catch (e) { return null; }
+            }).filter(e => e);
+
+            if (events.length === 0) return;
+
+            const startTime = events[0].timestamp;
+
+            events.forEach(event => {
+                const el = document.createElement('div');
+                el.className = `event type-${event.type}`;
+
+                const timeOffset = (event.timestamp - startTime).toFixed(3);
+
+                let title = event.type.toUpperCase();
+                let body = JSON.stringify(event.data, null, 2);
+
+                // Customize display based on type
+                if (event.type === 'completion_start') {
+                    title = '🏁 Completion Start';
+                    body = event.data.prompt;
+                } else if (event.type === 'tool_call') {
+                    title = `🛠️ Tool Call: ${event.data.tool}`;
+                    body = JSON.stringify(event.data.args, null, 2);
+                } else if (event.type === 'tool_result') {
+                    title = `🔙 Tool Result: ${event.data.tool}`;
+                    body = event.data.result;
+                } else if (event.type === 'agent_response') {
+                    title = '💬 Agent Response';
+                    body = event.data.content;
+                } else if (event.type === 'handoff') {
+                    title = `🤝 Handoff -> ${event.data.target}`;
+                    body = event.data.context;
+                }
+
+                el.innerHTML = `
+                    <div class="card">
+                        <div class="card-header">
+                            <span>${title} <span class="agent-badge">Using: ${event.agent}</span></span>
+                            <span class="timestamp">+${timeOffset}s</span>
+                        </div>
+                        <div class="card-body">${body}</div>
+                    </div>
+                `;
+                timeline.appendChild(el);
+            });
+        }
+    </script>
+</body>
+
+</html>

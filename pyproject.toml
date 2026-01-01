@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "axon-framework"
-version = "0.5.1"
-description = "The 'FastAPI' for AI Agents - Build typed, production-ready AI agents in minutes"
+version = "0.8.0"
+description = "Build Agentic AI Systems in minutes. Now with Multi-Agent Swarms! 🐝"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}

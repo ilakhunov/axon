@@ -1,19 +1,26 @@
 import inspect
 import json
-from typing import Callable, Dict, Any, List, Optional, Type
-from pydantic import TypeAdapter
-from openai import OpenAI
+from typing import Any, Dict, List, Optional, Callable, Type, Coroutine
+from pydantic import BaseModel, TypeAdapter
+from openai import OpenAI, AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
 from dotenv import load_dotenv
 import tiktoken
+from contextlib import contextmanager
 
-from .types import AgentConfig, Tool
+from .types import AgentConfig, Tool, Handoff
 from .utils import get_logger
 from .context import Context
+from .tracing import Tracer, Event
+from .knowledge import KnowledgeBase
 
 load_dotenv() # Load environment variables from .env file
 
 logger = get_logger()
+
+def tool(func):
+    """Decorator to mark a function as a tool."""
+    return func
 
 class Agent:
     def __init__(
@@ -22,14 +29,28 @@ class Agent:
         system: str = "You are a helpful assistant.", 
         model: str = "gpt-4o",
         max_history_tokens: int = 4000,
-        memory: str = None  # NEW! Path to memory database
+        memory: str = None,
+        client: Optional[OpenAI] = None,
+        tracer: Optional[Tracer] = None,
+        knowledge: Optional[str] = None  # RAG: Path to file or text
     ):
+        """
+        Initialize the Agent.
+        
+        Args:
+            name: Name of the agent.
+            system: System prompt.
+            model: LLM model name (e.g. gpt-4o, gpt-3.5-turbo).
+            max_history_tokens: Limit for memory context.
+            memory: Path to SQLite database for persistent memory.
+            client: Optional OpenAI client instance. Pass this for generic providers (Ollama, etc).
+        """
         self.config = AgentConfig(name=name, system_prompt=system, model=model)
         self.tools: Dict[str, Tool] = {}
         self.max_history_tokens = max_history_tokens
-        self.context = Context()  # Shared context for tools
+        self.context = Context()
         
-        # Initialize memory if path provided
+        # 1. Initialize Memory
         if memory:
             from .memory import Memory
             self.memory = Memory(memory)
@@ -37,8 +58,45 @@ class Agent:
         else:
             self.memory = None
         
-        # Initialize tokenizer for the model
-    
+        # 2. Initialize Tokenizer (Safe fallback)
+        try:
+            self.tokenizer = tiktoken.encoding_for_model(model)
+        except KeyError:
+            self.tokenizer = tiktoken.get_encoding("cl100k_base")
+        
+        # 3. Initialize History
+        self.history: List[ChatCompletionMessageParam] = [
+            {"role": "system", "content": system}
+        ]
+        
+        # 4. Initialize Client (Dependency Injection)
+        if client:
+            self.client = client
+        else:
+            try:
+                self.client = OpenAI()
+            except Exception:
+                self.client = None
+        
+        # 5. Initialize Tracer
+        self.tracer = tracer
+        
+        # 6. Initialize Knowledge Base (RAG)
+        self.knowledge = None
+        if knowledge:
+            self.knowledge = KnowledgeBase()
+            # If it looks like a file path, load it
+            if knowledge.endswith(('.txt', '.md', '.py', '.json')):
+                try:
+                    self.knowledge.load_from_file(knowledge)
+                    logger.info(f"Loaded knowledge from file: {knowledge}")
+                except Exception as e:
+                    logger.error(f"Failed to load knowledge file: {e}")
+            else:
+                # Treat as raw text
+                self.knowledge.load_from_text(knowledge)
+                logger.info("Loaded knowledge from raw text string")
+
     @property
     def name(self) -> str:
         return self.config.name
@@ -46,23 +104,6 @@ class Agent:
     @property
     def model(self) -> str:
         return self.config.model
-        try:
-            self.tokenizer = tiktoken.encoding_for_model(model)
-        except KeyError:
-            # Fallback to cl100k_base for unknown models
-            self.tokenizer = tiktoken.get_encoding("cl100k_base")
-        
-        # We assume OPENAI_API_KEY is set in environment, or user passes client. 
-        # For simplicity in MVP, we instantiate default client.
-        self.history: List[ChatCompletionMessageParam] = [
-            {"role": "system", "content": system}
-        ]
-        
-        # Lazy load client to allow Agent instantiation without keys (for tool testing etc)
-        try:
-            self.client = OpenAI()
-        except Exception:
-            self.client = None # type: ignore
     
     def _count_tokens(self, messages: List[ChatCompletionMessageParam]) -> int:
         """Count tokens in message history."""
@@ -161,6 +202,9 @@ class Agent:
         )
         logger.info(f"Registered tool: [bold cyan]{name}[/]")
         return func
+    
+    # Alias for explicit registration style
+    register_tool = tool
 
     def ask(self, prompt: str, response_model: Optional[Type] = None) -> Any:
         """
@@ -202,6 +246,16 @@ class Agent:
         
         # Truncate history to stay within limits
         self._truncate_history()
+        
+        # RAG: Inject Relevant Context
+        if self.knowledge:
+            context = self.knowledge.query(prompt)
+            if context:
+                logger.info(f"Retrieved Context: {context[:200]}...")
+                self.history.append({
+                    "role": "system", 
+                    "content": f"Relevant Context from Knowledge Base:\n{context}"
+                })
 
         # Prepare tools
         oai_tools: List[ChatCompletionToolParam] = [t.schema_ for t in self.tools.values()] # type: ignore
@@ -213,6 +267,10 @@ class Agent:
                  self.client = OpenAI()
              except Exception:
                  return "❌ Error: Missing OPENAI_API_KEY. Please set it in your environment."
+
+        # Trace Start
+        if self.tracer:
+            self.tracer.log(Event("completion_start", self.name, {"prompt": prompt}))
 
         # If structured output is requested, use response_format
         extra_params = {}
@@ -263,6 +321,8 @@ class Agent:
 
             if msg.tool_calls:
                 logger.info(f"Agent decided to call {len(msg.tool_calls)} tools")
+                handoff_signal = None
+
                 for tool_call in msg.tool_calls:
                     fn_name = tool_call.function.name
                     fn_args = json.loads(tool_call.function.arguments)
@@ -270,6 +330,10 @@ class Agent:
                     if fn_name in self.tools:
                         logger.info(f"Calling [bold cyan]{fn_name}[/] with {fn_args}")
                         
+                        # Trace Tool Call
+                        if self.tracer:
+                            self.tracer.log(Event("tool_call", self.name, {"tool": fn_name, "args": fn_args}))
+
                         # Check if tool needs context injection
                         tool_func = self.tools[fn_name].func
                         sig = inspect.signature(tool_func)
@@ -281,11 +345,31 @@ class Agent:
                         tool_result = tool_func(**fn_args)
                         logger.info(f"Result: {tool_result}")
                         
-                        self.history.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": str(tool_result)
-                        })
+                        # Trace Tool Result
+                        if self.tracer:
+                            self.tracer.log(Event("tool_result", self.name, {"tool": fn_name, "result": str(tool_result)}))
+                        
+                        # Check for Handoff
+                        if isinstance(tool_result, Handoff):
+                            logger.info(f"🤝 Handoff signal detected -> {tool_result.target_agent}")
+                            handoff_signal = tool_result
+                            
+                            # Trace Handoff
+                            if self.tracer:
+                                self.tracer.log(Event("handoff", self.name, {"target": tool_result.target_agent, "context": tool_result.context}))
+
+                            # CRITICAL: We must still record the tool output in history
+                            self.history.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": f"Transferred to {tool_result.target_agent}: {tool_result.context}"
+                            })
+                        else:
+                            self.history.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": str(tool_result)
+                            })
                     else:
                         logger.error(f"Tool {fn_name} not found!")
                         self.history.append({
@@ -293,17 +377,33 @@ class Agent:
                             "tool_call_id": tool_call.id,
                             "content": f"Error: Tool {fn_name} not found"
                         })
+                
+                # Use signal if found
+                if handoff_signal:
+                    return handoff_signal
             else:
                 # Final answer
                 content = msg.content or ""
                 logger.info(f"Agent Answer: [bold blue]{content}[/]")
                 
+                # Trace Answer
+                if self.tracer:
+                    self.tracer.log(Event("agent_response", self.name, {"content": content}))
+
                 # Save assistant response to memory
                 if self.memory:
                     self.memory.save_message("assistant", content)
                 
                 return content
     
+    def serve(self, host: str = "0.0.0.0", port: int = 8000):
+        """
+        Serve the agent as a REST API.
+        This blocks the main thread.
+        """
+        from .serve import serve
+        serve(self, host, port)
+
     def ask_stream(self, prompt: str):
         """
         Stream agent responses in real-time.
@@ -432,3 +532,166 @@ class Agent:
                 # No tool calls, we're done
                 logger.info(f"Streaming complete: {len(full_content)} chars")
                 break
+
+class AsyncAgent(Agent):
+    """
+    Asynchronous version of Agent.
+    """
+    def __init__(
+        self, 
+        name: str, 
+        system: str = "You are a helpful assistant.", 
+        model: str = "gpt-4o",
+        max_history_tokens: int = 4000,
+        memory: str = None,
+        client: Optional[AsyncOpenAI] = None
+    ):
+        super().__init__(name, system, model, max_history_tokens, memory)
+        
+        # Override client with AsyncClient
+        if client:
+            self.client = client
+        else:
+            try:
+                self.client = AsyncOpenAI()
+            except Exception:
+                self.client = None
+
+    async def ask(self, prompt: str, response_model: Optional[Type] = None) -> Any:
+        """
+        Send a message to the agent asynchronously.
+        """
+        logger.info(f"User asking (async): [bold green]{prompt}[/]")
+        
+        # Load memory (sync for now, sqlite is fast enough, or todo: make memory async)
+        if self.memory:
+            user_msg_count = sum(1 for msg in self.history if msg.get("role") == "user")
+            if user_msg_count == 0:
+                recent_messages = self.memory.get_recent_messages(limit=10)
+                if recent_messages:
+                    for msg in recent_messages:
+                        if msg['role'] != 'system':
+                            self.history.append({"role": msg['role'], "content": msg['content']})
+        
+        self.history.append({"role": "user", "content": prompt})
+        
+        if self.memory:
+            self.memory.save_message("user", prompt)
+            
+        self._truncate_history()
+        
+        print(f"DEBUG: Checking knowledge in ask. self.knowledge is {self.knowledge}")
+        # RAG: Inject Relevant Context
+        if self.knowledge:
+            print("DEBUG: Querying knowledge base...")
+            context = self.knowledge.query(prompt)
+            if context:
+                logger.info(f"Retrieved Context: {context[:200]}...")
+                # Inject as system message temporarily for this turn
+                # Or append to user prompt. Let's append to system prompt for better adherence
+                self.history.append({
+                    "role": "system", 
+                    "content": f"Relevant Context from Knowledge Base:\n{context}"
+                })
+        
+        oai_tools = [t.schema_ for t in self.tools.values()] # type: ignore
+        if not oai_tools: oai_tools = None # type: ignore
+        
+        if not self.client:
+             try:
+                 self.client = AsyncOpenAI()
+             except Exception:
+                 return "❌ Error: Missing OPENAI_API_KEY."
+
+        # Structured output logic (same as sync)
+        extra_params = {}
+        if response_model:
+            response_schema = {
+                "type": "function",
+                "function": {
+                    "name": "return_structured_response",
+                    "description": "Return the response in the specified format",
+                    "parameters": TypeAdapter(response_model).json_schema()
+                }
+            }
+            if oai_tools: oai_tools.append(response_schema) # type: ignore
+            else: oai_tools = [response_schema] # type: ignore
+
+        while True:
+            # Await the API call
+            response = await self.client.chat.completions.create(
+                model=self.config.model,
+                messages=self.history,
+                tools=oai_tools,
+                **extra_params
+            )
+            
+            msg = response.choices[0].message
+            
+            # Helper logic for structured (same logic, just copy-paste for now for robustness)
+            if response_model and msg.tool_calls:
+                 for tool_call in msg.tool_calls:
+                    if tool_call.function.name == "return_structured_response":
+                        fn_args = json.loads(tool_call.function.arguments)
+                        try:
+                            validated = response_model(**fn_args)
+                            return validated
+                        except Exception as e:
+                            return f"Error: {e}"
+
+            msg_dict = msg.model_dump(exclude_none=True)
+            self.history.append(msg_dict) # type: ignore
+
+            if msg.tool_calls:
+                logger.info(f"Agent decided to call {len(msg.tool_calls)} tools")
+                handoff_signal = None
+                
+                for tool_call in msg.tool_calls:
+                    fn_name = tool_call.function.name
+                    fn_args = json.loads(tool_call.function.arguments)
+                    
+                    if fn_name in self.tools:
+                        logger.info(f"Calling [bold cyan]{fn_name}[/] with {fn_args}")
+                        tool_func = self.tools[fn_name].func
+                        
+                        # Context injection
+                        sig = inspect.signature(tool_func)
+                        if 'ctx' in sig.parameters:
+                            fn_args['ctx'] = self.context
+                        
+                        # EXECUTE ASYNC OR SYNC
+                        if inspect.iscoroutinefunction(tool_func):
+                            tool_result = await tool_func(**fn_args)
+                        else:
+                            tool_result = tool_func(**fn_args)
+                            
+                        logger.info(f"Result: {tool_result}")
+                        
+                        if isinstance(tool_result, Handoff):
+                            handoff_signal = tool_result
+                            self.history.append({
+                                "role": "tool", 
+                                "tool_call_id": tool_call.id, 
+                                "content": f"Transferred to {tool_result.target_agent}: {tool_result.context}"
+                            })
+                        else:
+                            self.history.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": str(tool_result)
+                            })
+                    else:
+                        self.history.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": f"Error: Tool {fn_name} not found"
+                        })
+                
+                if handoff_signal:
+                    return handoff_signal
+            else:
+                content = msg.content or ""
+                logger.info(f"Agent Answer: [bold blue]{content}[/]")
+                if self.memory:
+                    self.memory.save_message("assistant", content)
+                return content

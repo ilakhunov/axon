@@ -1,0 +1,4 @@
+{"id": "b4646f48-3aab-4478-bb9a-e35f1db84a8a", "type": "completion_start", "timestamp": 1767304045.7302191, "agent": "TracerBot", "data": {"prompt": "What is 100 + 250?"}, "parent_id": null}
+{"id": "17d5086f-7bbe-435b-a44d-83413d5ca130", "type": "tool_call", "timestamp": 1767304047.1875918, "agent": "TracerBot", "data": {"tool": "calculate", "args": {"a": 100, "b": 250}}, "parent_id": null}
+{"id": "19eea45d-55f2-40e8-8a70-f4c5cebaba74", "type": "tool_result", "timestamp": 1767304047.1892183, "agent": "TracerBot", "data": {"tool": "calculate", "result": "350"}, "parent_id": null}
+{"id": "ef2167cb-30a0-4c87-8019-d198dac14437", "type": "agent_response", "timestamp": 1767304047.5980399, "agent": "TracerBot", "data": {"content": "100 + 250 is 350."}, "parent_id": null}
