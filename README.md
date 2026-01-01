@@ -305,10 +305,11 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 - [x] **v0.1**: Core Agent + Tool decorator
 - [x] **v0.2**: Plugin ecosystem (Web Search, File System)
-- [x] **v0.3**: Production essentials (Structured Outputs, History Management, Context/State) ✨
-- [ ] **v0.4**: Streaming & async support
-- [ ] **v0.5**: Multi-agent collaboration
-- [ ] **v1.0**: Axon Studio (Visual debugging UI) + Full production readiness
+- [x] **v0.3**: Production essentials (Structured Outputs, History Management, Context/State)
+- [x] **v0.4**: Essential tools (Streaming, HTTP/API, Database)
+- [x] **v0.5**: Intelligence & Memory (Persistent Memory, Error Retry, Plugin System) ✨ **CURRENT**
+- [ ] **v0.6**: Multi-agent collaboration
+- [ ] **v1.0**: Axon Studio (Visual debugging UI) + Enterprise features
 
 ---
 
