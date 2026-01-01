@@ -86,10 +86,18 @@ class Agent:
         logger.info(f"Registered tool: [bold cyan]{name}[/]")
         return func
 
-    def ask(self, prompt: str) -> str:
+    def ask(self, prompt: str, response_model: Optional[Type] = None) -> Any:
         """
         Send a message to the agent and get a response.
         Handles tool calls automatically.
+        
+        Args:
+            prompt: The user's question or instruction
+            response_model: Optional Pydantic model for structured output
+            
+        Returns:
+            If response_model is provided, returns validated Pydantic instance.
+            Otherwise, returns string.
         """
         logger.info(f"User asking: [bold green]{prompt}[/]")
         self.history.append({"role": "user", "content": prompt})
@@ -105,16 +113,50 @@ class Agent:
              except Exception:
                  return "❌ Error: Missing OPENAI_API_KEY. Please set it in your environment."
 
+        # If structured output is requested, use response_format
+        extra_params = {}
+        if response_model:
+            # Use OpenAI's structured output feature (function calling hack)
+            # We create a "fake" tool that represents the response schema
+            response_schema = {
+                "type": "function",
+                "function": {
+                    "name": "return_structured_response",
+                    "description": "Return the response in the specified format",
+                    "parameters": TypeAdapter(response_model).json_schema()
+                }
+            }
+            # Force the model to use this tool
+            if oai_tools:
+                oai_tools.append(response_schema) # type: ignore
+            else:
+                oai_tools = [response_schema] # type: ignore
+
         while True:
             response = self.client.chat.completions.create(
                 model=self.config.model,
                 messages=self.history,
                 tools=oai_tools,
+                **extra_params
             )
             
             msg = response.choices[0].message
-            # self.history.append(msg) # OpenAI object... needs to be dict or handled. 
-            # Let's convert to dict to be safe
+            
+            # Check if this is a structured response FIRST (before adding to history)
+            if response_model and msg.tool_calls:
+                for tool_call in msg.tool_calls:
+                    if tool_call.function.name == "return_structured_response":
+                        logger.info(f"Parsing structured response: {response_model.__name__}")
+                        fn_args = json.loads(tool_call.function.arguments)
+                        try:
+                            validated = response_model(**fn_args)
+                            logger.info(f"✅ Validated response: {validated}")
+                            return validated
+                        except Exception as e:
+                            logger.error(f"Failed to validate response: {e}")
+                            return f"Error: Failed to parse structured response: {e}"
+            
+            # Add message to history
             msg_dict = msg.model_dump(exclude_none=True)
             self.history.append(msg_dict) # type: ignore
 
