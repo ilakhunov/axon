@@ -1,5 +1,9 @@
 # Axon 🧠
 
+> [!TIP]
+> **New Documentation Site is Live!** 📚
+> Check out the full guides and tutorials at **[ilakhunov.github.io/axon](https://ilakhunov.github.io/axon/)**
+
 <div align="center">
 
 **The "FastAPI" for AI Agents**
@@ -12,7 +16,8 @@ Build typed, production-ready AI agents in minutes, not hours.
 [Quick Start](#-quick-start) •
 [Features](#-features) •
 [Examples](#-examples) •
-[Documentation](#-documentation)
+[**Documentation**](https://ilakhunov.github.io/axon/)
+
 
 </div>
 
