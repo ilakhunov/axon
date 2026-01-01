@@ -260,8 +260,8 @@ axon/
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 **Quick contributions:**
-- 🐛 Report bugs via [Issues](#)
-- 💡 Request features via [Discussions](#)
+- 🐛 Report bugs via [Issues](https://github.com/ilakhunov/axon/issues)
+- 💡 Request features via [Discussions](https://github.com/ilakhunov/axon/discussions)
 - 🔧 Submit PRs for fixes or new tools
 
 ---
@@ -394,7 +394,7 @@ Inspired by:
 
 **Built with ❤️ by developers, for developers**
 
-[Report Bug](#) • [Request Feature](#) • [Join Discord](#)
+[Report Bug](https://github.com/ilakhunov/axon/issues/new) • [Request Feature](https://github.com/ilakhunov/axon/discussions/new?category=ideas) • [⭐ Star](https://github.com/ilakhunov/axon)
 
 </div>
 
