@@ -21,12 +21,21 @@ class Agent:
         name: str, 
         system: str = "You are a helpful assistant.", 
         model: str = "gpt-4o",
-        max_history_tokens: int = 4000
+        max_history_tokens: int = 4000,
+        memory: str = None  # NEW! Path to memory database
     ):
         self.config = AgentConfig(name=name, system_prompt=system, model=model)
         self.tools: Dict[str, Tool] = {}
         self.max_history_tokens = max_history_tokens
         self.context = Context()  # Shared context for tools
+        
+        # Initialize memory if path provided
+        if memory:
+            from .memory import Memory
+            self.memory = Memory(memory)
+            logger.info(f"Memory enabled: {memory}")
+        else:
+            self.memory = None
         
         # Initialize tokenizer for the model
         try:
@@ -159,7 +168,29 @@ class Agent:
             Otherwise, returns string.
         """
         logger.info(f"User asking: [bold green]{prompt}[/]")
+        
+        # Load relevant memories if available (first time only)
+        if self.memory:
+            # Check if this is the first user message in this session
+            user_msg_count = sum(1 for msg in self.history if msg.get("role") == "user")
+            if user_msg_count == 0:
+                # Get recent conversation history to restore context
+                recent_messages = self.memory.get_recent_messages(limit=10)
+                if recent_messages:
+                    logger.info(f"Loaded {len(recent_messages)} messages from memory")
+                    # Add recent messages to history (excluding system)
+                    for msg in recent_messages:
+                        if msg['role'] != 'system':
+                            self.history.append({
+                                "role": msg['role'],
+                                "content": msg['content']
+                            })
+        
         self.history.append({"role": "user", "content": prompt})
+        
+        # Save user message to memory
+        if self.memory:
+            self.memory.save_message("user", prompt)
         
         # Truncate history to stay within limits
         self._truncate_history()
@@ -258,6 +289,11 @@ class Agent:
                 # Final answer
                 content = msg.content or ""
                 logger.info(f"Agent Answer: [bold blue]{content}[/]")
+                
+                # Save assistant response to memory
+                if self.memory:
+                    self.memory.save_message("assistant", content)
+                
                 return content
     
     def ask_stream(self, prompt: str):
