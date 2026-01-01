@@ -48,7 +48,7 @@ No chains. No graphs. No configurations. **Just Python.**
 ### Installation
 
 ```bash
-pip install openai pydantic rich python-dotenv duckduckgo-search
+pip install openai pydantic rich python-dotenv duckduckgo-search tiktoken requests
 ```
 
 ### Create Your First Agent (60 seconds)
@@ -93,15 +93,18 @@ That's it! 🎉
 - **Helpful errors**: No cryptic stack traces
 - **5-minute promise**: From zero to working agent in 5 minutes
 
-### 🔌 Plugin Ecosystem
-Built-in tools, no API keys needed:
-- **Web Search** (`axon_tools.web_search`): DuckDuckGo integration
-- **File System** (`axon_tools.read_file`, `write_file`): Read/write files
+### 🔌 Production Tools (v0.4 🆕)
+Built-in batteries for real-world apps:
+- **Web Search** (`web_search`): DuckDuckGo integration, no API key
+- **File System** (`read_file`, `write_file`): Safe file operations
+- **HTTP/API** (`http_get`, `http_post`): REST API integration
+- **Database** (`query_db`, `create_table`): SQLite queries & analytics
 
 ### 🧪 Type-Safe & Production-Ready (v0.3)
 - **Structured Outputs**: Return typed Pydantic models instead of strings
 - **History Management**: Auto-truncates conversation to stay within token limits
 - **Context/State**: Share data between tools without manual passing
+- **Streaming Responses** (v0.4): Real-time text generation
 - Full type inference support
 
 ---
