@@ -26,7 +26,21 @@ for chunk in agent.ask_stream("Tell me a long story"):
     print(chunk, end="", flush=True)
 ```
 
-## 3. Creating a Swarm (Multi-Agent)
+## 3. Web Scraping
+
+Use built-in scraper tool (v0.9+):
+
+```python
+from axon import Agent
+from axon_tools.scraper import scrape_url
+
+agent = Agent("Researcher")
+agent.tool(scrape_url)
+
+result = agent.ask("Scrape https://example.com and summarize")
+```
+
+## 4. Creating a Swarm (Multi-Agent)
 
 Chain agents together.
 
