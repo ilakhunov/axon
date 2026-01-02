@@ -85,6 +85,22 @@ swarm.run(triage_agent, "I have a bug")
 - ❌ **While True:** Do not write your own chat loops unless using `ask_stream`. Use `agent.ask()`.
 - ❌ **Untyped Tools:** `def func(x):` will fail. Use `def func(x: str) -> str:`.
 
+## 4.1 response_model Troubleshooting
+**CRITICAL:** `response_model` now has fallback JSON parsing (v0.9+).
+If LLM returns text instead of calling the structured output tool, Axon will:
+1. Try to extract JSON from markdown code blocks
+2. Parse and validate against your Pydantic model
+3. Raise `TypeError` with helpful message if parsing fails
+
+**Best Practice:**
+```python
+try:
+    result = agent.ask("Extract data", response_model=MyModel)
+except TypeError as e:
+    # LLM couldn't produce valid structured output
+    print(f"Fallback to manual parsing: {e}")
+```
+
 ## 5. Memory Configuration
 ```python
 # SQLite (Local)

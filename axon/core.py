@@ -398,6 +398,36 @@ class Agent:
                 if self.memory:
                     self.memory.add("assistant", content)
                 
+                # CRITICAL FIX: If response_model was requested but LLM didn't use tool
+                if response_model:
+                    logger.warning(f"LLM returned text instead of structured output. Attempting JSON parse...")
+                    try:
+                        # Try to parse content as JSON
+                        import re
+                        # Extract JSON from markdown code blocks if present
+                        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', content, re.DOTALL)
+                        if json_match:
+                            json_str = json_match.group(1)
+                        else:
+                            # Try to find raw JSON object
+                            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                            json_str = json_match.group(0) if json_match else content
+                        
+                        data = json.loads(json_str)
+                        validated = response_model(**data)
+                        logger.info(f"✅ Fallback parsing successful: {validated}")
+                        return validated
+                    except Exception as e:
+                        error_msg = (
+                            f"AxonTypeError: Expected {response_model.__name__}, got str.\n"
+                            f"Reason: LLM returned unstructured text instead of calling tool.\n"
+                            f"LLM Response: {content[:200]}...\n"
+                            f"Suggestion: Try rephrasing prompt or use manual parsing.\n"
+                            f"Parse Error: {e}"
+                        )
+                        logger.error(error_msg)
+                        raise TypeError(error_msg)
+                
                 return content
     
     def serve(self, host: str = "0.0.0.0", port: int = 8000):
@@ -698,4 +728,32 @@ class AsyncAgent(Agent):
                 logger.info(f"Agent Answer: [bold blue]{content}[/]")
                 if self.memory:
                     self.memory.add("assistant", content)
+                
+                # CRITICAL FIX: If response_model was requested but LLM didn't use tool
+                if response_model:
+                    logger.warning(f"LLM returned text instead of structured output. Attempting JSON parse...")
+                    try:
+                        import re
+                        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', content, re.DOTALL)
+                        if json_match:
+                            json_str = json_match.group(1)
+                        else:
+                            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                            json_str = json_match.group(0) if json_match else content
+                        
+                        data = json.loads(json_str)
+                        validated = response_model(**data)
+                        logger.info(f"✅ Fallback parsing successful: {validated}")
+                        return validated
+                    except Exception as e:
+                        error_msg = (
+                            f"AxonTypeError: Expected {response_model.__name__}, got str.\n"
+                            f"Reason: LLM returned unstructured text instead of calling tool.\n"
+                            f"LLM Response: {content[:200]}...\n"
+                            f"Suggestion: Try rephrasing prompt or use manual parsing.\n"
+                            f"Parse Error: {e}"
+                        )
+                        logger.error(error_msg)
+                        raise TypeError(error_msg)
+                
                 return content

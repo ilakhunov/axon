@@ -39,3 +39,36 @@ writer = Agent(name="Writer", system="Write a post based on info.")
 swarm = Swarm(agents=[researcher, writer])
 # ... defined handoffs ...
 ```
+
+## 4. Troubleshooting Structured Output
+
+If `response_model` returns a string instead of your Pydantic model:
+
+**Cause:** LLM sometimes ignores the structured output tool and returns plain text.
+
+**Solution (v0.9+):** Axon now has automatic fallback JSON parsing.
+
+```python
+from pydantic import BaseModel
+
+class Post(BaseModel):
+    title: str
+    content: str
+
+try:
+    result = agent.ask("Create a post about AI", response_model=Post)
+    # Will attempt JSON extraction if LLM returns text
+    print(result.title)
+except TypeError as e:
+    # Parsing failed - use manual approach
+    print(f"Fallback needed: {e}")
+```
+
+**Best Practice:** Be specific in your prompt:
+```python
+# ❌ Vague
+agent.ask("Tell me about the user", response_model=UserInfo)
+
+# ✅ Explicit
+agent.ask("Extract user info in JSON format: name, age, email", response_model=UserInfo)
+```
