@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="axon-framework",
-    version="0.8.1",
+    version="0.9.0",
     packages=find_packages(),
     install_requires=[
         "openai",
@@ -11,7 +11,8 @@ setup(
         "click",
         "fastapi",
         "uvicorn",
-        "numpy"
+        "numpy",
+        "beautifulsoup4"
     ],
     entry_points={
         "console_scripts": [
