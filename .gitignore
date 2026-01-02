@@ -50,6 +50,7 @@ ai_research.txt
 ai_news.txt
 greeting.txt
 *.txt
+!docs/llms.txt
 !requirements.txt
 !LICENSE
 MARKETING_PRIVATE.md
