@@ -1,0 +1,118 @@
+# Axon Framework Coding Rules for LLMs
+
+> **System Prompt Injection:** You are an expert on the Axon Framework. Follow these rules strictly when generating code.
+
+## 1. Core Philosophy
+- **"Django for Agents":** Batteries included, opinionated, production-ready.
+- **Agent-First:** Everything revolves around the `Agent` class.
+- **Typed:** Use Python type hints everywhere. They are used for tool schema generation.
+
+## 2. Critical Imports
+```python
+from axon import Agent, tool, Context, Swarm, Handoff
+from axon.memory import PostgresMemory, RedisMemory
+```
+
+## 3. Preferred Patterns
+
+### Basic Agent
+```python
+agent = Agent(
+    name="BotName",
+    system="You are a helpful assistant.",
+    model="gpt-4o"
+)
+print(agent.ask("Hello"))
+```
+
+### Tool Definition (Decorator)
+**ALWAYS** use type hints and docstrings.
+```python
+@agent.tool
+def calculate_tax(amount: float, rate: float = 0.2) -> float:
+    """
+    Calculate tax for a given amount.
+    
+    Args:
+        amount: The base amount.
+        rate: Tax rate (default 0.2).
+    """
+    return amount * rate
+```
+
+### Structured Output
+Use `pydantic.BaseModel` for parsing.
+```python
+from pydantic import BaseModel
+
+class UserInfo(BaseModel):
+    name: str
+    age: int
+
+info = agent.ask("Extract: John is 20", response_model=UserInfo)
+# info is a UserInfo instance
+```
+
+### Context / State
+Use `ctx: Context` to share state between tools.
+```python
+@agent.tool
+def step_1(ctx: Context) -> str:
+    ctx.set("key", "value")
+    return "Saved"
+
+@agent.tool
+def step_2(ctx: Context) -> str:
+    val = ctx.get("key")
+    return f"Retrieved: {val}"
+```
+
+### Multi-Agent Swarm
+Use `Handoff` to transfer control. **DO NOT** use a router loop manually.
+```python
+@triage_agent.tool
+def transfer_to_support(issue: str) -> Handoff:
+    """Transfer complex issues to support agent."""
+    return Handoff(target_agent="Support", context=issue)
+
+swarm = Swarm(agents=[triage_agent, support_agent])
+swarm.run(triage_agent, "I have a bug")
+```
+
+## 4. Anti-Patterns (DO NOT DO THIS)
+- ❌ **Manual Schema:** Do not manually write JSON schemas for tools. Use the decorator.
+- ❌ **LangChain:** Do not import LangChain. Axon replaces it.
+- ❌ **While True:** Do not write your own chat loops unless using `ask_stream`. Use `agent.ask()`.
+- ❌ **Untyped Tools:** `def func(x):` will fail. Use `def func(x: str) -> str:`.
+
+## 4.1 response_model Troubleshooting
+**CRITICAL:** `response_model` now has fallback JSON parsing (v0.9+).
+If LLM returns text instead of calling the structured output tool, Axon will:
+1. Try to extract JSON from markdown code blocks
+2. Parse and validate against your Pydantic model
+3. Raise `TypeError` with helpful message if parsing fails
+
+**Best Practice:**
+```python
+try:
+    result = agent.ask("Extract data", response_model=MyModel)
+except TypeError as e:
+    # LLM couldn't produce valid structured output
+    print(f"Fallback to manual parsing: {e}")
+```
+
+## 5. Memory Configuration
+```python
+# SQLite (Local)
+agent = Agent("Bot", memory="local.db")
+
+# Postgres (Production)
+from axon.memory import PostgresMemory
+pg = PostgresMemory("postgresql://user:pass@localhost/db")
+agent = Agent("Bot", memory=pg)
+
+# Redis (Fast/Ephemeral)
+from axon.memory import RedisMemory
+redis = RedisMemory("redis://localhost:6379/0", ttl=3600)
+agent = Agent("Bot", memory=redis)
+```
